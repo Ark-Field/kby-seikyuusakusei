@@ -106,8 +106,10 @@ else:
 APP_ID = 18
 TAX_RATE = 0.10
 ROWS_PER_PAGE = 14
-DETAIL_ROW_HEIGHT = 1.0 * cm   # 明細1行の高さ: 1cm
-REMARK_BOX_HEIGHT = 3.0 * cm   # 備考欄の高さ: 3cm
+TITLE_SPACER_HEIGHT = 3.0 * cm  # タイトル下の段落余白: 3cm
+BANK_BOX_HEIGHT = 4.0 * cm      # 振込先の高さ: 4cm
+DETAIL_ROW_HEIGHT = 1.0 * cm    # 明細1行の高さ: 1cm
+REMARK_BOX_HEIGHT = 3.0 * cm    # 備考欄の高さ: 3cm
 
 # 文字幅指定（売上日3・名目16・数量4・単価3・金額6・受注番号4 = 合計36文字相当）に合わせた列幅（合計 18.0cm）
 TOTAL_WEIGHT = 3 + 16 + 4 + 3 + 6 + 4
@@ -124,7 +126,9 @@ COL_WIDTHS = [
 ISSUER_INFO = (
     "<b>株式会社小林断截</b> 〒130-0021墨田区緑2-11-18<br/>"
     "info@k-dan.co.jp www.k-dan.co.jp<br/>"
-    "TEL:03-3634-8351 FAX:03-3633-0695"
+    "TEL:03-3634-8351 FAX:03-3633-0695<br/>"
+    "下記の通り ご請求いたします。<br/>"
+    "期日までに下記お振込みお願い申し上げます。"
 )
 
 # ==========================================
@@ -239,7 +243,7 @@ def fetch_pocket_records(start_date_str, end_date_str):
     return []
 
 # ==========================================
-# 7. PDF生成関数（太線・黒文字・高さ1cm×14行組・備考高さ3cm）
+# 7. PDF生成関数（青色太線・黒文字・高さ1cm×14行組・振込先4cm・備考3cm）
 # ==========================================
 def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_transfer_info, remark_text):
     buffer = io.BytesIO()
@@ -248,11 +252,12 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         pagesize=portrait(A4),
         leftMargin=1.5 * cm,
         rightMargin=1.5 * cm,
-        topMargin=0.8 * cm,
-        bottomMargin=0.8 * cm,
+        topMargin=0.5 * cm,
+        bottomMargin=0.5 * cm,
     )
     styles = getSampleStyleSheet()
     ink = colors.black
+    blue_line = colors.HexColor("#1E3A8A")
 
     title_style = ParagraphStyle(
         "InvTitle",
@@ -267,8 +272,8 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         "MetaStyle",
         parent=styles["Normal"],
         fontName=FONT_NAME,
-        fontSize=8.5,
-        leading=12,
+        fontSize=8,
+        leading=10.5,
         textColor=ink,
     )
     meta_right = ParagraphStyle(
@@ -280,16 +285,16 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         "CustStyle",
         parent=styles["Normal"],
         fontName=FONT_NAME,
-        fontSize=13,
-        leading=17,
+        fontSize=12.5,
+        leading=16,
         textColor=ink,
     )
     sum_label_style = ParagraphStyle(
         "SumLabel",
         parent=styles["Normal"],
         fontName=FONT_NAME,
-        fontSize=8.5,
-        leading=11,
+        fontSize=8,
+        leading=10,
         alignment=1,
         textColor=ink,
     )
@@ -297,8 +302,8 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         "SumValRight",
         parent=styles["Normal"],
         fontName=FONT_NAME,
-        fontSize=10,
-        leading=13,
+        fontSize=9.5,
+        leading=12,
         alignment=2,
         textColor=ink,
     )
@@ -306,7 +311,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         "THStyle",
         parent=styles["Normal"],
         fontName=FONT_NAME,
-        fontSize=8.5,
+        fontSize=8,
         leading=10,
         alignment=1,
         textColor=ink,
@@ -335,26 +340,24 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         parent=styles["Normal"],
         fontName=FONT_NAME,
         fontSize=8.5,
-        leading=11,
+        leading=10.5,
         alignment=2,
         textColor=ink,
     )
-    remark_body_style = ParagraphStyle(
-        "RemarkBody",
+    box_body_style = ParagraphStyle(
+        "BoxBody",
         parent=styles["Normal"],
         fontName=FONT_NAME,
-        fontSize=8.5,
-        leading=12,
+        fontSize=8,
+        leading=11,
         textColor=ink,
     )
 
-    # 金額計算（消費税10%）
     subtotal_amount = sum(row["amount"] for row in detail_rows)
     tax_amount = int(round(subtotal_amount * TAX_RATE))
     grand_total_inc_tax = int(round(subtotal_amount + tax_amount))
     subtotal_ex_tax = int(round(subtotal_amount))
 
-    # 14行ずつ分割（14行超過時は2ページ目以降へ繰り越し）
     chunks = [detail_rows[i:i + ROWS_PER_PAGE] for i in range(0, len(detail_rows), ROWS_PER_PAGE)]
     if not chunks:
         chunks = [[]]
@@ -368,11 +371,12 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         if page_idx > 0:
             elements.append(PageBreak())
 
+        # タイトル（太字）＋ 3cmの段落余白
         page_suffix = f" （{page_idx + 1}/{len(chunks)}）" if len(chunks) > 1 else ""
         elements.append(Paragraph(f"<b>ご請求書{page_suffix}</b>", title_style))
-        elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, TITLE_SPACER_HEIGHT))
 
-        # ヘッダー上部：得意先名（下にライン）・件数 vs 請求日・発行元
+        # ヘッダー上部：得意先名（下に青太線）・件数 vs 請求日・発行元
         top_header_data = [
             [
                 Paragraph(f"<b>{customer_name} 御中</b>", cust_style),
@@ -383,21 +387,22 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 Paragraph(ISSUER_INFO, meta_right),
             ],
         ]
-        top_header_tbl = Table(top_header_data, colWidths=[9.5 * cm, TOTAL_DETAIL_WIDTH - 9.5 * cm])
+        top_header_tbl = Table(top_header_data, colWidths=[8.5 * cm, TOTAL_DETAIL_WIDTH - 8.5 * cm])
         top_header_tbl.setStyle(
             TableStyle(
                 [
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LINEBELOW", (0, 0), (0, 0), 1.8, ink),
-                    ("BOTTOMPADDING", (0, 0), (0, 0), 4),
-                    ("TOPPADDING", (0, 1), (-1, 1), 3),
+                    ("LINEBELOW", (0, 0), (0, 0), 2.0, blue_line),
+                    ("BOTTOMPADDING", (0, 0), (0, 0), 3),
+                    ("TOPPADDING", (0, 1), (-1, 1), 2),
+                    ("BOTTOMPADDING", (0, 1), (-1, 1), 2),
                 ]
             )
         )
         elements.append(top_header_tbl)
-        elements.append(Spacer(1, 0.18 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
-        # 集計ブロック（合計金額税込・税抜金額・消費税（10%）を右寄せ、太枠）
+        # 集計ブロック（合計金額税込・税抜金額・消費税（10%）右寄せ・青太線）
         summary_box = Table(
             [
                 [
@@ -412,14 +417,14 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 ],
             ],
             colWidths=[6.0 * cm, 6.0 * cm, 6.0 * cm],
-            rowHeights=[0.48 * cm, 0.65 * cm],
+            rowHeights=[0.42 * cm, 0.55 * cm],
         )
         summary_box.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
-                    ("GRID", (0, 0), (-1, -1), 1.0, ink),
-                    ("BOX", (0, 0), (-1, -1), 1.6, ink),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DBEAFE")),
+                    ("GRID", (0, 0), (-1, -1), 1.2, blue_line),
+                    ("BOX", (0, 0), (-1, -1), 2.0, blue_line),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -427,28 +432,30 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(summary_box)
-        elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
-        # 振込先ブロック（UI入力）
+        # 振込先ブロック（高さ4cm・UI入力・青太線）
         transfer_box = Table(
-            [[Paragraph(f"<b>振込先：</b> {transfer_clean if transfer_clean else '（未入力）'}", meta_style)]],
+            [[Paragraph(f"<b>振込先</b><br/>{transfer_clean}", box_body_style)]],
             colWidths=[TOTAL_DETAIL_WIDTH],
+            rowHeights=[BANK_BOX_HEIGHT],
         )
         transfer_box.setStyle(
             TableStyle(
                 [
-                    ("BOX", (0, 0), (-1, -1), 1.4, ink),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("BOX", (0, 0), (-1, -1), 1.8, blue_line),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                 ]
             )
         )
         elements.append(transfer_box)
-        elements.append(Spacer(1, 0.2 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
-        # 明細テーブル（ヘッダー + 高さ1cm×14行組 + 金額縦合計行）
+        # 明細テーブル（高さ1cm×14行組 + 下段 金額縦合計）
         detail_table_data = [
             [
                 Paragraph("<b>売上日</b>", th_style),
@@ -459,7 +466,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 Paragraph("<b>受注番号</b>", th_style),
             ]
         ]
-        row_heights = [0.55 * cm]
+        row_heights = [0.48 * cm]
 
         page_subtotal = 0.0
         for idx in range(ROWS_PER_PAGE):
@@ -480,7 +487,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 detail_table_data.append(["", "", "", "", "", ""])
             row_heights.append(DETAIL_ROW_HEIGHT)
 
-        # 下段：金額縦合計（自動計算）
+        # 金額縦合計（下段自動計算）
         detail_table_data.append(
             [
                 Paragraph("<b>合計</b>", td_center),
@@ -491,47 +498,43 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 Paragraph("", td_center),
             ]
         )
-        row_heights.append(0.65 * cm)
+        row_heights.append(0.55 * cm)
 
         detail_tbl = Table(detail_table_data, colWidths=COL_WIDTHS, rowHeights=row_heights)
         last_row_idx = len(detail_table_data) - 1
         detail_tbl.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
-                    ("BACKGROUND", (0, last_row_idx), (-1, last_row_idx), colors.HexColor("#F3F4F6")),
-                    ("GRID", (0, 0), (-1, -1), 1.0, ink),
-                    ("BOX", (0, 0), (-1, -1), 1.8, ink),
-                    ("LINEBELOW", (0, 0), (-1, 0), 1.6, ink),
-                    ("LINEABOVE", (0, last_row_idx), (-1, last_row_idx), 1.6, ink),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DBEAFE")),
+                    ("BACKGROUND", (0, last_row_idx), (-1, last_row_idx), colors.HexColor("#EFF6FF")),
+                    ("GRID", (0, 0), (-1, -1), 1.2, blue_line),
+                    ("BOX", (0, 0), (-1, -1), 2.0, blue_line),
+                    ("LINEBELOW", (0, 0), (-1, 0), 1.8, blue_line),
+                    ("LINEABOVE", (0, last_row_idx), (-1, last_row_idx), 1.8, blue_line),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                 ]
             )
         )
         elements.append(detail_tbl)
-        elements.append(Spacer(1, 0.2 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
-        # フッター：備考（UI入力・高さ3cm・幅は明細幅と同じ）
-        remark_content = Paragraph(
-            f"<b>備考</b><br/>{remark_clean}",
-            remark_body_style,
-        )
+        # フッター：備考（UI入力・高さ3cm・幅は明細幅と同じ・青太線）
         remark_tbl = Table(
-            [[remark_content]],
+            [[Paragraph(f"<b>備考</b><br/>{remark_clean}", box_body_style)]],
             colWidths=[TOTAL_DETAIL_WIDTH],
             rowHeights=[REMARK_BOX_HEIGHT],
         )
         remark_tbl.setStyle(
             TableStyle(
                 [
-                    ("BOX", (0, 0), (-1, -1), 1.6, ink),
+                    ("BOX", (0, 0), (-1, -1), 1.8, blue_line),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                 ]
@@ -561,11 +564,11 @@ with c3:
     st.markdown("<br/>", unsafe_allow_html=True)
     fetch_clicked = st.button("📥 @pocketからデータ取得・集計", type="primary", key="btn_fetch_pocket")
 
-st.markdown("### 🏦 振込先（UI入力・全請求書共通）")
+st.markdown("### 🏦 振込先（UI入力・PDF枠高さ4cm）")
 bank_transfer_input = st.text_area(
     "振込先口座情報を入力してください",
     value="〇〇銀行 〇〇支店（普通）1234567\n口座名義：カ）コバヤシダンサイ",
-    height=75,
+    height=90,
     key="input_bank_transfer",
 )
 
@@ -700,3 +703,9 @@ if "grouped_invoice_data" in st.session_state:
                 st.dataframe(preview_df, use_container_width=True)
 
             st.markdown("---")
+
+<ElicitationsGroup message="次のステップとして必要な調整があればお選びください:">
+  <Elicitation label="A4縦1ページに収まるよう高さや余白を微調整する" query="A4縦1ページにタイトル下3cm余白・振込先4cm・明細14行×1cm・備考3cmがはみ出さず収まるよう、各要素の高さや余白を調整してください。"/>
+  <Elicitation label="得意先ごとのPDFをZIPで一括ダウンロードできるようにする" query="得意先ごとの請求書PDFをまとめてZIPファイルで一括ダウンロードできるボタンを追加してください。"/>
+  <Elicitation label="振込先を2口座や複数行で入力しやすいレイアウトにする" query="UIから振込先を入力する欄を整理し、PDFの振込先枠（高さ4cm）にきれいに印字されるよう調整してください。"/>
+</ElicitationsGroup>
