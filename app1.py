@@ -412,4 +412,291 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 ],
             ],
             colWidths=[6.0 * cm, 6.0 * cm, 6.0 * cm],
-            rowHeights=[0.48 *
+            rowHeights=[0.48 * cm, 0.65 * cm],
+        )
+        summary_box.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
+                    ("GRID", (0, 0), (-1, -1), 1.0, ink),
+                    ("BOX", (0, 0), (-1, -1), 1.6, ink),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        elements.append(summary_box)
+        elements.append(Spacer(1, 0.15 * cm))
+
+        # 振込先ブロック（UI入力）
+        transfer_box = Table(
+            [[Paragraph(f"<b>振込先：</b> {transfer_clean if transfer_clean else '（未入力）'}", meta_style)]],
+            colWidths=[TOTAL_DETAIL_WIDTH],
+        )
+        transfer_box.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 1.4, ink),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        elements.append(transfer_box)
+        elements.append(Spacer(1, 0.2 * cm))
+
+        # 明細テーブル（ヘッダー + 高さ1cm×14行組 + 金額縦合計行）
+        detail_table_data = [
+            [
+                Paragraph("<b>売上日</b>", th_style),
+                Paragraph("<b>名目</b>", th_style),
+                Paragraph("<b>数量</b>", th_style),
+                Paragraph("<b>単価</b>", th_style),
+                Paragraph("<b>金額</b>", th_style),
+                Paragraph("<b>受注番号</b>", th_style),
+            ]
+        ]
+        row_heights = [0.55 * cm]
+
+        page_subtotal = 0.0
+        for idx in range(ROWS_PER_PAGE):
+            if idx < len(chunk):
+                r = chunk[idx]
+                page_subtotal += r["amount"]
+                detail_table_data.append(
+                    [
+                        Paragraph(r["sale_date_str"], td_center),
+                        Paragraph(r["item_name"], td_left),
+                        Paragraph(format_num_display(r["qty"], is_currency=False), td_right),
+                        Paragraph(format_num_display(r["unit_price"], is_currency=True), td_right),
+                        Paragraph(format_num_display(r["amount"], is_currency=True), td_right),
+                        Paragraph(r["order_no"], td_center),
+                    ]
+                )
+            else:
+                detail_table_data.append(["", "", "", "", "", ""])
+            row_heights.append(DETAIL_ROW_HEIGHT)
+
+        # 下段：金額縦合計（自動計算）
+        detail_table_data.append(
+            [
+                Paragraph("<b>合計</b>", td_center),
+                Paragraph("", td_left),
+                Paragraph("", td_right),
+                Paragraph("", td_right),
+                Paragraph(f"<b>￥{int(round(page_subtotal)):,}</b>", total_row_right),
+                Paragraph("", td_center),
+            ]
+        )
+        row_heights.append(0.65 * cm)
+
+        detail_tbl = Table(detail_table_data, colWidths=COL_WIDTHS, rowHeights=row_heights)
+        last_row_idx = len(detail_table_data) - 1
+        detail_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
+                    ("BACKGROUND", (0, last_row_idx), (-1, last_row_idx), colors.HexColor("#F3F4F6")),
+                    ("GRID", (0, 0), (-1, -1), 1.0, ink),
+                    ("BOX", (0, 0), (-1, -1), 1.8, ink),
+                    ("LINEBELOW", (0, 0), (-1, 0), 1.6, ink),
+                    ("LINEABOVE", (0, last_row_idx), (-1, last_row_idx), 1.6, ink),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ]
+            )
+        )
+        elements.append(detail_tbl)
+        elements.append(Spacer(1, 0.2 * cm))
+
+        # フッター：備考（UI入力・高さ3cm・幅は明細幅と同じ）
+        remark_content = Paragraph(
+            f"<b>備考</b><br/>{remark_clean}",
+            remark_body_style,
+        )
+        remark_tbl = Table(
+            [[remark_content]],
+            colWidths=[TOTAL_DETAIL_WIDTH],
+            rowHeights=[REMARK_BOX_HEIGHT],
+        )
+        remark_tbl.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 1.6, ink),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        elements.append(remark_tbl)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+# ==========================================
+# 8. メイン画面
+# ==========================================
+today_date = date.today()
+auto_start = date(today_date.year, today_date.month, 1)
+auto_last_day = calendar.monthrange(today_date.year, today_date.month)[1]
+auto_end = date(today_date.year, today_date.month, auto_last_day)
+
+st.markdown("### 🔎 検索条件（売上計上＝計上・売上日期間）")
+c1, c2, c3 = st.columns([2, 2, 2])
+with c1:
+    start_date_input = st.date_input("売上日（開始・field-143）", value=auto_start, key="search_start_date")
+with c2:
+    end_date_input = st.date_input("売上日（終了・field-143）", value=auto_end, key="search_end_date")
+with c3:
+    st.markdown("<br/>", unsafe_allow_html=True)
+    fetch_clicked = st.button("📥 @pocketからデータ取得・集計", type="primary", key="btn_fetch_pocket")
+
+st.markdown("### 🏦 振込先（UI入力・全請求書共通）")
+bank_transfer_input = st.text_area(
+    "振込先口座情報を入力してください",
+    value="〇〇銀行 〇〇支店（普通）1234567\n口座名義：カ）コバヤシダンサイ",
+    height=75,
+    key="input_bank_transfer",
+)
+
+if fetch_clicked:
+    raw_records = fetch_pocket_records(start_date_input.strftime("%Y-%m-%d"), end_date_input.strftime("%Y-%m-%d"))
+
+    grouped_data = defaultdict(lambda: {"main_count": 0, "rows": []})
+
+    for rec in raw_records:
+        if not is_keijo_checked(rec.get("field-91")):
+            continue
+
+        main_date = parse_date_safe(rec.get("field-143"))
+        if not main_date or not (start_date_input <= main_date <= end_date_input):
+            continue
+
+        customer = clean_val(rec.get("field18-84")) or "（得意先名未設定）"
+        order_no = clean_val(rec.get("js25"))
+
+        grouped_data[customer]["main_count"] += 1
+
+        main_name = clean_val(rec.get("field18-15"))
+        main_qty = parse_number_safe(rec.get("field18-18"))
+        main_price = parse_number_safe(rec.get("field-20"))
+        main_amt_raw = clean_val(rec.get("field-59"))
+        main_amt = parse_number_safe(main_amt_raw) if main_amt_raw else (main_qty * main_price)
+
+        grouped_data[customer]["rows"].append(
+            {
+                "sale_date_str": format_mmdd(main_date),
+                "item_name": main_name,
+                "qty": main_qty,
+                "unit_price": main_price,
+                "amount": main_amt,
+                "order_no": order_no,
+                "source": "メイン",
+            }
+        )
+
+        sub_items = extract_subform_rows(rec)
+        for sub in sub_items:
+            sub_date = parse_date_safe(sub.get("field-140_1")) or main_date
+            part_9 = clean_val(sub.get("field-140_9"))
+            part_3 = clean_val(sub.get("field-140_3"))
+            merged_name = "，".join([p for p in [part_9, part_3] if p])
+
+            sub_qty = parse_number_safe(sub.get("field-140_4"))
+            sub_price = parse_number_safe(sub.get("field-140_5"))
+            sub_amt_raw = clean_val(sub.get("field-140_7"))
+            sub_amt = parse_number_safe(sub_amt_raw) if sub_amt_raw else (sub_qty * sub_price)
+
+            grouped_data[customer]["rows"].append(
+                {
+                    "sale_date_str": format_mmdd(sub_date),
+                    "item_name": merged_name,
+                    "qty": sub_qty,
+                    "unit_price": sub_price,
+                    "amount": sub_amt,
+                    "order_no": order_no,
+                    "source": "サブ",
+                }
+            )
+
+    st.session_state["grouped_invoice_data"] = dict(grouped_data)
+
+if "grouped_invoice_data" in st.session_state:
+    grouped = st.session_state["grouped_invoice_data"]
+    if not grouped:
+        st.warning("⚠️ 条件（売上計上＝計上・指定期間内）に一致するレコードが見つかりませんでした。")
+    else:
+        if "customer_remarks_18" not in st.session_state:
+            st.session_state["customer_remarks_18"] = {}
+
+        st.markdown("### 📄 得意先別 集計・備考入力・PDF出力")
+        for cust_name, payload in grouped.items():
+            main_cnt = payload["main_count"]
+            rows = payload["rows"]
+            subtotal = sum(r["amount"] for r in rows)
+            tax = int(round(subtotal * TAX_RATE))
+            total_inc = int(round(subtotal + tax))
+            page_cnt = max(1, (len(rows) + ROWS_PER_PAGE - 1) // ROWS_PER_PAGE)
+
+            if cust_name not in st.session_state["customer_remarks_18"]:
+                st.session_state["customer_remarks_18"][cust_name] = ""
+
+            with st.container():
+                col_info, col_rem, col_dl = st.columns([3, 4, 2])
+                with col_info:
+                    st.markdown(f"**🏢 {cust_name}**")
+                    st.write(f"メイン件数: **{main_cnt} 件** / 明細行数: **{len(rows)} 行**（{page_cnt} ページ）")
+                    st.write(f"税抜: ￥{int(round(subtotal)):,} / 税: ￥{tax:,} / **税込: ￥{total_inc:,}**")
+                with col_rem:
+                    st.session_state["customer_remarks_18"][cust_name] = st.text_area(
+                        f"備考（高さ3cm枠・{cust_name}）",
+                        value=st.session_state["customer_remarks_18"][cust_name],
+                        key=f"remark_area_{cust_name}",
+                        height=75,
+                    )
+                with col_dl:
+                    st.markdown("<br/>", unsafe_allow_html=True)
+                    pdf_bytes = generate_customer_invoice_pdf(
+                        customer_name=cust_name,
+                        main_count=main_cnt,
+                        detail_rows=rows,
+                        bank_transfer_info=bank_transfer_input,
+                        remark_text=st.session_state["customer_remarks_18"][cust_name],
+                    )
+                    safe_fname = cust_name.replace("/", "_").replace("\\", "_")
+                    st.download_button(
+                        label="📥 PDF出力",
+                        data=pdf_bytes,
+                        file_name=f"ご請求書_{safe_fname}_{date.today().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        key=f"dl_pdf_{cust_name}",
+                    )
+
+            with st.expander(f"明細プレビュー（{cust_name}：{len(rows)}行）"):
+                preview_df = pd.DataFrame(
+                    [
+                        {
+                            "売上日": r["sale_date_str"],
+                            "名目": r["item_name"],
+                            "数量": r["qty"],
+                            "単価": r["unit_price"],
+                            "金額": r["amount"],
+                            "受注番号": r["order_no"],
+                            "区分": r["source"],
+                        }
+                        for r in rows
+                    ]
+                )
+                st.dataframe(preview_df, use_container_width=True)
+
+            st.markdown("---")
