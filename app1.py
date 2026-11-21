@@ -105,13 +105,12 @@ else:
 
 APP_ID = 18
 TAX_RATE = 0.10
-ROWS_PER_PAGE = 14
+ROWS_PER_PAGE = 12
 TITLE_SPACER_HEIGHT = 3.0 * cm  # タイトル下の段落余白: 3cm
-BANK_BOX_HEIGHT = 4.0 * cm      # 振込先の高さ: 4cm
+BANK_BOX_HEIGHT = 3.0 * cm      # 振込先の高さ: 3cm
 DETAIL_ROW_HEIGHT = 1.0 * cm    # 明細1行の高さ: 1cm
 REMARK_BOX_HEIGHT = 3.0 * cm    # 備考欄の高さ: 3cm
 
-# 文字幅指定（売上日3・名目16・数量4・単価3・金額6・受注番号4 = 合計36文字相当）に合わせた列幅（合計 18.0cm）
 TOTAL_WEIGHT = 3 + 16 + 4 + 3 + 6 + 4
 TOTAL_DETAIL_WIDTH = 18.0 * cm
 COL_WIDTHS = [
@@ -169,6 +168,17 @@ def parse_number_safe(val):
         return float(s)
     except ValueError:
         return 0.0
+
+def has_valid_amount(val):
+    """金額欄が存在する（空欄ではなく数値化できる）か判定"""
+    s = clean_val(val).replace(",", "").replace("￥", "").replace("¥", "")
+    if not s:
+        return False
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
 
 def format_num_display(num_val, is_currency=False):
     if num_val is None:
@@ -243,7 +253,7 @@ def fetch_pocket_records(start_date_str, end_date_str):
     return []
 
 # ==========================================
-# 7. PDF生成関数（青色太線・黒文字・高さ1cm×14行組・振込先4cm・備考3cm）
+# 7. PDF生成関数（青色太線・黒文字・高さ1cm×12行組・振込先3cm・備考3cm）
 # ==========================================
 def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_transfer_info, remark_text):
     buffer = io.BytesIO()
@@ -371,12 +381,10 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         if page_idx > 0:
             elements.append(PageBreak())
 
-        # タイトル（太字）＋ 3cmの段落余白
         page_suffix = f" （{page_idx + 1}/{len(chunks)}）" if len(chunks) > 1 else ""
         elements.append(Paragraph(f"<b>ご請求書{page_suffix}</b>", title_style))
         elements.append(Spacer(1, TITLE_SPACER_HEIGHT))
 
-        # ヘッダー上部：得意先名（下に青太線）・件数 vs 請求日・発行元
         top_header_data = [
             [
                 Paragraph(f"<b>{customer_name} 御中</b>", cust_style),
@@ -400,9 +408,8 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(top_header_tbl)
-        elements.append(Spacer(1, 0.12 * cm))
+        elements.append(Spacer(1, 0.15 * cm))
 
-        # 集計ブロック（合計金額税込・税抜金額・消費税（10%）右寄せ・青太線）
         summary_box = Table(
             [
                 [
@@ -417,7 +424,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 ],
             ],
             colWidths=[6.0 * cm, 6.0 * cm, 6.0 * cm],
-            rowHeights=[0.42 * cm, 0.55 * cm],
+            rowHeights=[0.45 * cm, 0.6 * cm],
         )
         summary_box.setStyle(
             TableStyle(
@@ -432,9 +439,8 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(summary_box)
-        elements.append(Spacer(1, 0.12 * cm))
+        elements.append(Spacer(1, 0.15 * cm))
 
-        # 振込先ブロック（高さ4cm・UI入力・青太線）
         transfer_box = Table(
             [[Paragraph(f"<b>振込先</b><br/>{transfer_clean}", box_body_style)]],
             colWidths=[TOTAL_DETAIL_WIDTH],
@@ -453,9 +459,8 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(transfer_box)
-        elements.append(Spacer(1, 0.12 * cm))
+        elements.append(Spacer(1, 0.15 * cm))
 
-        # 明細テーブル（高さ1cm×14行組 + 下段 金額縦合計）
         detail_table_data = [
             [
                 Paragraph("<b>売上日</b>", th_style),
@@ -466,7 +471,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 Paragraph("<b>受注番号</b>", th_style),
             ]
         ]
-        row_heights = [0.48 * cm]
+        row_heights = [0.5 * cm]
 
         page_subtotal = 0.0
         for idx in range(ROWS_PER_PAGE):
@@ -487,7 +492,6 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 detail_table_data.append(["", "", "", "", "", ""])
             row_heights.append(DETAIL_ROW_HEIGHT)
 
-        # 金額縦合計（下段自動計算）
         detail_table_data.append(
             [
                 Paragraph("<b>合計</b>", td_center),
@@ -498,7 +502,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
                 Paragraph("", td_center),
             ]
         )
-        row_heights.append(0.55 * cm)
+        row_heights.append(0.6 * cm)
 
         detail_tbl = Table(detail_table_data, colWidths=COL_WIDTHS, rowHeights=row_heights)
         last_row_idx = len(detail_table_data) - 1
@@ -520,9 +524,8 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(detail_tbl)
-        elements.append(Spacer(1, 0.12 * cm))
+        elements.append(Spacer(1, 0.15 * cm))
 
-        # フッター：備考（UI入力・高さ3cm・幅は明細幅と同じ・青太線）
         remark_tbl = Table(
             [[Paragraph(f"<b>備考</b><br/>{remark_clean}", box_body_style)]],
             colWidths=[TOTAL_DETAIL_WIDTH],
@@ -564,11 +567,11 @@ with c3:
     st.markdown("<br/>", unsafe_allow_html=True)
     fetch_clicked = st.button("📥 @pocketからデータ取得・集計", type="primary", key="btn_fetch_pocket")
 
-st.markdown("### 🏦 振込先（UI入力・PDF枠高さ4cm）")
+st.markdown("### 🏦 振込先（UI入力・PDF枠高さ3cm）")
 bank_transfer_input = st.text_area(
     "振込先口座情報を入力してください",
     value="〇〇銀行 〇〇支店（普通）1234567\n口座名義：カ）コバヤシダンサイ",
-    height=90,
+    height=75,
     key="input_bank_transfer",
 )
 
@@ -590,35 +593,40 @@ if fetch_clicked:
 
         grouped_data[customer]["main_count"] += 1
 
+        # 1) メインフォームの明細行（名目・金額が空欄の行は除去）
         main_name = clean_val(rec.get("field18-15"))
         main_qty = parse_number_safe(rec.get("field18-18"))
         main_price = parse_number_safe(rec.get("field-20"))
-        main_amt_raw = clean_val(rec.get("field-59"))
-        main_amt = parse_number_safe(main_amt_raw) if main_amt_raw else (main_qty * main_price)
+        main_amt_raw = rec.get("field-59")
+        if main_name and has_valid_amount(main_amt_raw):
+            main_amt = parse_number_safe(main_amt_raw)
+            grouped_data[customer]["rows"].append(
+                {
+                    "sale_date_str": format_mmdd(main_date),
+                    "item_name": main_name,
+                    "qty": main_qty,
+                    "unit_price": main_price,
+                    "amount": main_amt,
+                    "order_no": order_no,
+                    "source": "メイン",
+                }
+            )
 
-        grouped_data[customer]["rows"].append(
-            {
-                "sale_date_str": format_mmdd(main_date),
-                "item_name": main_name,
-                "qty": main_qty,
-                "unit_price": main_price,
-                "amount": main_amt,
-                "order_no": order_no,
-                "source": "メイン",
-            }
-        )
-
+        # 2) サブフォームの明細行を併合（連結名目または金額field-140_7が空欄・存在しない行は除去）
         sub_items = extract_subform_rows(rec)
         for sub in sub_items:
-            sub_date = parse_date_safe(sub.get("field-140_1")) or main_date
             part_9 = clean_val(sub.get("field-140_9"))
             part_3 = clean_val(sub.get("field-140_3"))
             merged_name = "，".join([p for p in [part_9, part_3] if p])
 
+            sub_amt_raw = sub.get("field-140_7")
+            if not merged_name or not has_valid_amount(sub_amt_raw):
+                continue
+
+            sub_date = parse_date_safe(sub.get("field-140_1")) or main_date
             sub_qty = parse_number_safe(sub.get("field-140_4"))
             sub_price = parse_number_safe(sub.get("field-140_5"))
-            sub_amt_raw = clean_val(sub.get("field-140_7"))
-            sub_amt = parse_number_safe(sub_amt_raw) if sub_amt_raw else (sub_qty * sub_price)
+            sub_amt = parse_number_safe(sub_amt_raw)
 
             grouped_data[customer]["rows"].append(
                 {
