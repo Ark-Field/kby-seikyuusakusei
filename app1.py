@@ -703,9 +703,3 @@ if "grouped_invoice_data" in st.session_state:
                 st.dataframe(preview_df, use_container_width=True)
 
             st.markdown("---")
-
-<ElicitationsGroup message="次のステップとして必要な調整があればお選びください:">
-  <Elicitation label="A4縦1ページに収まるよう高さや余白を微調整する" query="A4縦1ページにタイトル下3cm余白・振込先4cm・明細14行×1cm・備考3cmがはみ出さず収まるよう、各要素の高さや余白を調整してください。"/>
-  <Elicitation label="得意先ごとのPDFをZIPで一括ダウンロードできるようにする" query="得意先ごとの請求書PDFをまとめてZIPファイルで一括ダウンロードできるボタンを追加してください。"/>
-  <Elicitation label="振込先を2口座や複数行で入力しやすいレイアウトにする" query="UIから振込先を入力する欄を整理し、PDFの振込先枠（高さ4cm）にきれいに印字されるよう調整してください。"/>
-</ElicitationsGroup>
