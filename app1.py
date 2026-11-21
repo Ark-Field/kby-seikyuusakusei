@@ -122,8 +122,9 @@ COL_WIDTHS = [
     TOTAL_DETAIL_WIDTH * (4 / TOTAL_WEIGHT),   # 受注番号（4文字幅）
 ]
 
-ISSUER_INFO = (
-    "<b>株式会社小林断截</b> 〒130-0021墨田区緑2-11-18<br/>"
+ISSUER_COMPANY_NAME = "<b>株式会社小林断截</b>"
+ISSUER_SUB_INFO = (
+    "〒130-0021墨田区緑2-11-18<br/>"
     "info@k-dan.co.jp www.k-dan.co.jp<br/>"
     "TEL:03-3634-8351 FAX:03-3633-0695<br/>"
     "下記の通り ご請求いたします。<br/>"
@@ -170,7 +171,6 @@ def parse_number_safe(val):
         return 0.0
 
 def has_valid_amount(val):
-    """金額欄が存在する（空欄ではなく数値化できる）か判定"""
     s = clean_val(val).replace(",", "").replace("￥", "").replace("¥", "")
     if not s:
         return False
@@ -253,7 +253,7 @@ def fetch_pocket_records(start_date_str, end_date_str):
     return []
 
 # ==========================================
-# 7. PDF生成関数（青色太線・黒文字・高さ1cm×12行組・振込先3cm・備考3cm）
+# 7. PDF生成関数
 # ==========================================
 def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_transfer_info, remark_text):
     buffer = io.BytesIO()
@@ -276,6 +276,24 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         fontSize=18,
         leading=22,
         alignment=1,
+        textColor=ink,
+    )
+    issuer_company_style = ParagraphStyle(
+        "IssuerCompanyStyle",
+        parent=styles["Normal"],
+        fontName=FONT_NAME,
+        fontSize=16,
+        leading=20,
+        alignment=2,
+        textColor=ink,
+    )
+    issuer_sub_style = ParagraphStyle(
+        "IssuerSubStyle",
+        parent=styles["Normal"],
+        fontName=FONT_NAME,
+        fontSize=8,
+        leading=10.5,
+        alignment=2,
         textColor=ink,
     )
     meta_style = ParagraphStyle(
@@ -385,30 +403,61 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
         elements.append(Paragraph(f"<b>ご請求書{page_suffix}</b>", title_style))
         elements.append(Spacer(1, TITLE_SPACER_HEIGHT))
 
-        top_header_data = [
+        right_issuer_block = Table(
             [
-                Paragraph(f"<b>{customer_name} 御中</b>", cust_style),
-                Paragraph(f"請求日：{issue_date_str}", meta_right),
+                [Paragraph(f"請求日：{issue_date_str}", meta_right)],
+                [Paragraph(ISSUER_COMPANY_NAME, issuer_company_style)],
+                [Paragraph(ISSUER_SUB_INFO, issuer_sub_style)],
             ],
+            colWidths=[TOTAL_DETAIL_WIDTH - 8.5 * cm],
+        )
+        right_issuer_block.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+
+        left_cust_block = Table(
             [
-                Paragraph(f"<b>件数：{main_count} 件</b>", meta_style),
-                Paragraph(ISSUER_INFO, meta_right),
+                [Paragraph(f"<b>{customer_name} 御中</b>", cust_style)],
+                [Paragraph(f"<b>件数：{main_count} 件</b>", meta_style)],
             ],
-        ]
-        top_header_tbl = Table(top_header_data, colWidths=[8.5 * cm, TOTAL_DETAIL_WIDTH - 8.5 * cm])
-        top_header_tbl.setStyle(
+            colWidths=[8.5 * cm],
+        )
+        left_cust_block.setStyle(
             TableStyle(
                 [
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("LINEBELOW", (0, 0), (0, 0), 2.0, blue_line),
                     ("BOTTOMPADDING", (0, 0), (0, 0), 3),
-                    ("TOPPADDING", (0, 1), (-1, 1), 2),
-                    ("BOTTOMPADDING", (0, 1), (-1, 1), 2),
+                    ("TOPPADDING", (0, 1), (0, 1), 4),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+
+        top_header_tbl = Table(
+            [[left_cust_block, right_issuer_block]],
+            colWidths=[8.5 * cm, TOTAL_DETAIL_WIDTH - 8.5 * cm],
+        )
+        top_header_tbl.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ]
             )
         )
         elements.append(top_header_tbl)
-        elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
         summary_box = Table(
             [
@@ -439,7 +488,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(summary_box)
-        elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
         transfer_box = Table(
             [[Paragraph(f"<b>振込先</b><br/>{transfer_clean}", box_body_style)]],
@@ -459,7 +508,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(transfer_box)
-        elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
         detail_table_data = [
             [
@@ -524,7 +573,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
             )
         )
         elements.append(detail_tbl)
-        elements.append(Spacer(1, 0.15 * cm))
+        elements.append(Spacer(1, 0.12 * cm))
 
         remark_tbl = Table(
             [[Paragraph(f"<b>備考</b><br/>{remark_clean}", box_body_style)]],
@@ -593,7 +642,6 @@ if fetch_clicked:
 
         grouped_data[customer]["main_count"] += 1
 
-        # 1) メインフォームの明細行（名目・金額が空欄の行は除去）
         main_name = clean_val(rec.get("field18-15"))
         main_qty = parse_number_safe(rec.get("field18-18"))
         main_price = parse_number_safe(rec.get("field-20"))
@@ -612,7 +660,6 @@ if fetch_clicked:
                 }
             )
 
-        # 2) サブフォームの明細行を併合（連結名目または金額field-140_7が空欄・存在しない行は除去）
         sub_items = extract_subform_rows(rec)
         for sub in sub_items:
             part_9 = clean_val(sub.get("field-140_9"))
