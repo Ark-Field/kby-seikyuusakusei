@@ -6,6 +6,9 @@ from datetime import datetime, date
 import requests
 import pandas as pd
 import streamlit as st
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import portrait, A4
@@ -253,7 +256,236 @@ def fetch_pocket_records(start_date_str, end_date_str):
     return []
 
 # ==========================================
-# 7. PDF生成関数
+# 7. Excel生成関数（顧客別売上一覧表＋全明細一覧）
+# ==========================================
+def generate_sales_summary_excel(grouped_data, remarks_dict, start_date_obj, end_date_obj):
+    wb = Workbook()
+
+    # 共通スタイル定義
+    font_title = Font(name="Meiryo UI", size=14, bold=True, color="0F172A")
+    font_sub = Font(name="Meiryo UI", size=9.5, color="334155")
+    font_header = Font(name="Meiryo UI", size=10, bold=True, color="FFFFFF")
+    font_body = Font(name="Meiryo UI", size=10, color="0F172A")
+    font_bold = Font(name="Meiryo UI", size=10, bold=True, color="0F172A")
+
+    fill_header = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+    fill_zebra = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    fill_total = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
+
+    thin_side = Side(style="thin", color="CBD5E1")
+    med_navy = Side(style="medium", color="1E3A8A")
+    double_bottom = Side(style="double", color="1E3A8A")
+
+    border_cell = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    border_header = Border(left=thin_side, right=thin_side, top=med_navy, bottom=med_navy)
+    border_total = Border(left=thin_side, right=thin_side, top=med_navy, bottom=double_bottom)
+
+    period_label = f"対象売上日：{start_date_obj.strftime('%Y年%m月%d日')} ～ {end_date_obj.strftime('%Y年%m月%d日')} ／ 出力日：{date.today().strftime('%Y年%m月%d日')}"
+
+    # ------------------------------------------
+    # シート1：顧客別売上一覧
+    # ------------------------------------------
+    ws1 = wb.active
+    ws1.title = "顧客別売上一覧"
+    ws1.views.sheetView[0].showGridLines = True
+
+    ws1["A1"] = "顧客別 売上一覧表（株式会社小林断截）"
+    ws1["A1"].font = font_title
+    ws1.row_dimensions[1].height = 26
+
+    ws1["A2"] = period_label
+    ws1["A2"].font = font_sub
+    ws1.row_dimensions[2].height = 18
+
+    headers_s1 = ["No.", "得意先名", "メイン件数", "明細行数", "税抜金額", "消費税（10%）", "合計金額（税込）", "備考"]
+    header_row_s1 = 4
+    ws1.row_dimensions[header_row_s1].height = 24
+
+    for col_idx, h_text in enumerate(headers_s1, start=1):
+        cell = ws1.cell(row=header_row_s1, column=col_idx, value=h_text)
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.border = border_header
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    sorted_customers = sorted(grouped_data.keys())
+    curr_row = header_row_s1 + 1
+
+    for idx, cust_name in enumerate(sorted_customers, start=1):
+        payload = grouped_data[cust_name]
+        main_cnt = payload["main_count"]
+        rows = payload["rows"]
+        subtotal = int(round(sum(r["amount"] for r in rows)))
+        tax = int(round(subtotal * TAX_RATE))
+        total_inc = subtotal + tax
+        remark_str = clean_val(remarks_dict.get(cust_name, ""))
+
+        row_vals = [idx, cust_name, main_cnt, len(rows), subtotal, tax, total_inc, remark_str]
+        ws1.row_dimensions[curr_row].height = 22
+        is_even = (idx % 2 == 0)
+
+        for col_idx, val in enumerate(row_vals, start=1):
+            c = ws1.cell(row=curr_row, column=col_idx, value=val)
+            c.font = font_body
+            c.border = border_cell
+            if is_even:
+                c.fill = fill_zebra
+
+            if col_idx == 1:
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.number_format = "#,##0"
+            elif col_idx in (2, 8):
+                c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            elif col_idx in (3, 4):
+                c.alignment = Alignment(horizontal="right", vertical="center")
+                c.number_format = "#,##0"
+            else:
+                c.alignment = Alignment(horizontal="right", vertical="center")
+                c.number_format = "¥#,##0"
+
+        curr_row += 1
+
+    # 総合計行（SUM関数）
+    first_data_row = header_row_s1 + 1
+    last_data_row = curr_row - 1
+    ws1.row_dimensions[curr_row].height = 25
+
+    total_cells = {
+        1: "",
+        2: "合 計",
+        3: f"=SUM(C{first_data_row}:C{last_data_row})" if last_data_row >= first_data_row else 0,
+        4: f"=SUM(D{first_data_row}:D{last_data_row})" if last_data_row >= first_data_row else 0,
+        5: f"=SUM(E{first_data_row}:E{last_data_row})" if last_data_row >= first_data_row else 0,
+        6: f"=SUM(F{first_data_row}:F{last_data_row})" if last_data_row >= first_data_row else 0,
+        7: f"=SUM(G{first_data_row}:G{last_data_row})" if last_data_row >= first_data_row else 0,
+        8: "",
+    }
+    for col_idx, val in total_cells.items():
+        c = ws1.cell(row=curr_row, column=col_idx, value=val)
+        c.font = font_bold
+        c.fill = fill_total
+        c.border = border_total
+        if col_idx == 2:
+            c.alignment = Alignment(horizontal="center", vertical="center")
+        elif col_idx in (3, 4):
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.number_format = "#,##0"
+        elif col_idx in (5, 6, 7):
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.number_format = "¥#,##0"
+        else:
+            c.alignment = Alignment(horizontal="left", vertical="center")
+
+    ws1.freeze_panes = f"A{header_row_s1 + 1}"
+    ws1.auto_filter.ref = f"A{header_row_s1}:H{max(header_row_s1, last_data_row)}"
+
+    col_widths_s1 = [7, 32, 13, 13, 16, 16, 18, 36]
+    for col_idx, w in enumerate(col_widths_s1, start=1):
+        ws1.column_dimensions[get_column_letter(col_idx)].width = w
+
+    # ------------------------------------------
+    # シート2：顧客別明細一覧
+    # ------------------------------------------
+    ws2 = wb.create_sheet(title="顧客別明細一覧")
+    ws2.views.sheetView[0].showGridLines = True
+
+    ws2["A1"] = "顧客別 売上明細一覧表（株式会社小林断截）"
+    ws2["A1"].font = font_title
+    ws2.row_dimensions[1].height = 26
+
+    ws2["A2"] = period_label
+    ws2["A2"].font = font_sub
+    ws2.row_dimensions[2].height = 18
+
+    headers_s2 = ["得意先名", "売上日", "名目", "数量", "単価", "金額", "受注番号", "区分"]
+    header_row_s2 = 4
+    ws2.row_dimensions[header_row_s2].height = 24
+
+    for col_idx, h_text in enumerate(headers_s2, start=1):
+        cell = ws2.cell(row=header_row_s2, column=col_idx, value=h_text)
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.border = border_header
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    curr_row_2 = header_row_s2 + 1
+    row_counter_2 = 0
+    for cust_name in sorted_customers:
+        for r in grouped_data[cust_name]["rows"]:
+            row_counter_2 += 1
+            ws2.row_dimensions[curr_row_2].height = 21
+            is_even = (row_counter_2 % 2 == 0)
+            vals_2 = [
+                cust_name,
+                r["sale_date_str"],
+                r["item_name"],
+                r["qty"],
+                r["unit_price"],
+                r["amount"],
+                r["order_no"],
+                r["source"],
+            ]
+            for col_idx, val in enumerate(vals_2, start=1):
+                c = ws2.cell(row=curr_row_2, column=col_idx, value=val)
+                c.font = font_body
+                c.border = border_cell
+                if is_even:
+                    c.fill = fill_zebra
+
+                if col_idx in (1, 3):
+                    c.alignment = Alignment(horizontal="left", vertical="center")
+                elif col_idx in (2, 7, 8):
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_idx == 4:
+                    c.alignment = Alignment(horizontal="right", vertical="center")
+                    c.number_format = "#,##0"
+                else:
+                    c.alignment = Alignment(horizontal="right", vertical="center")
+                    c.number_format = "¥#,##0"
+
+            curr_row_2 += 1
+
+    first_detail_row = header_row_s2 + 1
+    last_detail_row = curr_row_2 - 1
+    ws2.row_dimensions[curr_row_2].height = 25
+    total_cells_2 = {
+        1: "合 計",
+        2: "",
+        3: "",
+        4: f"=SUM(D{first_detail_row}:D{last_detail_row})" if last_detail_row >= first_detail_row else 0,
+        5: "",
+        6: f"=SUM(F{first_detail_row}:F{last_detail_row})" if last_detail_row >= first_detail_row else 0,
+        7: "",
+        8: "",
+    }
+    for col_idx, val in total_cells_2.items():
+        c = ws2.cell(row=curr_row_2, column=col_idx, value=val)
+        c.font = font_bold
+        c.fill = fill_total
+        c.border = border_total
+        if col_idx == 1:
+            c.alignment = Alignment(horizontal="center", vertical="center")
+        elif col_idx == 4:
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.number_format = "#,##0"
+        elif col_idx == 6:
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.number_format = "¥#,##0"
+
+    ws2.freeze_panes = f"A{header_row_s2 + 1}"
+    ws2.auto_filter.ref = f"A{header_row_s2}:H{max(header_row_s2, last_detail_row)}"
+
+    col_widths_s2 = [30, 11, 36, 12, 14, 16, 14, 10]
+    for col_idx, w in enumerate(col_widths_s2, start=1):
+        ws2.column_dimensions[get_column_letter(col_idx)].width = w
+
+    out_buf = io.BytesIO()
+    wb.save(out_buf)
+    out_buf.seek(0)
+    return out_buf
+
+# ==========================================
+# 8. PDF生成関数
 # ==========================================
 def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_transfer_info, remark_text):
     buffer = io.BytesIO()
@@ -599,7 +831,7 @@ def generate_customer_invoice_pdf(customer_name, main_count, detail_rows, bank_t
     return buffer
 
 # ==========================================
-# 8. メイン画面
+# 9. メイン画面
 # ==========================================
 today_date = date.today()
 auto_start = date(today_date.year, today_date.month, 1)
@@ -697,6 +929,28 @@ if "grouped_invoice_data" in st.session_state:
         if "customer_remarks_18" not in st.session_state:
             st.session_state["customer_remarks_18"] = {}
 
+        for cust_name in grouped.keys():
+            if cust_name not in st.session_state["customer_remarks_18"]:
+                st.session_state["customer_remarks_18"][cust_name] = ""
+
+        # 顧客別売上一覧表 Excel出力セクション
+        st.markdown("### 📊 顧客別売上一覧表（Excel出力）")
+        excel_bytes = generate_sales_summary_excel(
+            grouped_data=grouped,
+            remarks_dict=st.session_state["customer_remarks_18"],
+            start_date_obj=start_date_input,
+            end_date_obj=end_date_input,
+        )
+        st.download_button(
+            label="📥 顧客別売上一覧表（.xlsx）をダウンロード",
+            data=excel_bytes,
+            file_name=f"顧客別売上一覧表_{start_date_input.strftime('%Y%m%d')}-{end_date_input.strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_sales_summary_excel",
+        )
+        st.markdown("---")
+
+        # 得意先別 個別請求書PDF出力セクション
         st.markdown("### 📄 得意先別 集計・備考入力・PDF出力")
         for cust_name, payload in grouped.items():
             main_cnt = payload["main_count"]
@@ -705,9 +959,6 @@ if "grouped_invoice_data" in st.session_state:
             tax = int(round(subtotal * TAX_RATE))
             total_inc = int(round(subtotal + tax))
             page_cnt = max(1, (len(rows) + ROWS_PER_PAGE - 1) // ROWS_PER_PAGE)
-
-            if cust_name not in st.session_state["customer_remarks_18"]:
-                st.session_state["customer_remarks_18"][cust_name] = ""
 
             with st.container():
                 col_info, col_rem, col_dl = st.columns([3, 4, 2])
