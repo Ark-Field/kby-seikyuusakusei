@@ -131,8 +131,8 @@ else:
 APP_ID = 18
 TAX_RATE = 0.10
 ROWS_PER_PAGE = 12
-TITLE_SPACER_HEIGHT = 3.0 * cm  # タイトル下の段落余白: 3cm
-BANK_BOX_HEIGHT = 3.0 * cm  # 振込先の高さ: 3cm
+TITLE_SPACER_HEIGHT = 1.0 * cm  # タイトルとヘッダー部分の間: 1cm
+BANK_BOX_HEIGHT = 1.5 * cm  # 振込先の高さ: 1.5cm（従来の半分）
 DETAIL_ROW_HEIGHT = 1.0 * cm  # 明細1行の高さ: 1cm
 REMARK_BOX_HEIGHT = 3.0 * cm  # 備考欄の高さ: 3cm
 
@@ -190,6 +190,15 @@ def format_mmdd(d_val):
   if not parsed:
     return ""
   return parsed.strftime("%m/%d")
+
+
+def format_period_jp(start_date_obj, end_date_obj):
+  if not start_date_obj or not end_date_obj:
+    return ""
+  return (
+      f"{start_date_obj.strftime('%Y年%m月%d日')} ～"
+      f" {end_date_obj.strftime('%Y年%m月%d日')}"
+  )
 
 
 def parse_number_safe(val):
@@ -344,8 +353,7 @@ def generate_sales_summary_excel(
   )
 
   period_label = (
-      f"対象売上日：{start_date_obj.strftime('%Y年%m月%d日')} ～"
-      f" {end_date_obj.strftime('%Y年%m月%d日')} ／"
+      f"請求期間：{format_period_jp(start_date_obj, end_date_obj)} ／"
       f" 出力日：{date.today().strftime('%Y年%m月%d日')}"
   )
 
@@ -607,10 +615,16 @@ def generate_sales_summary_excel(
 
 
 # ==========================================
-# 8. PDF生成関数（洗練されたモダンヘッダー・インボイス登録番号対応）
+# 8. PDF生成関数
 # ==========================================
 def generate_customer_invoice_pdf(
-    customer_name, main_count, detail_rows, bank_transfer_info, remark_text
+    customer_name,
+    main_count,
+    detail_rows,
+    bank_transfer_info,
+    remark_text,
+    start_date_obj=None,
+    end_date_obj=None,
 ):
   buffer = io.BytesIO()
   doc = SimpleDocTemplate(
@@ -697,9 +711,17 @@ def generate_customer_invoice_pdf(
       "MetaBadgeStyle",
       parent=styles["Normal"],
       fontName=FONT_NAME,
-      fontSize=8.5,
+      fontSize=8.2,
       leading=11,
       textColor=navy_primary,
+  )
+  period_note_style = ParagraphStyle(
+      "PeriodNoteStyle",
+      parent=styles["Normal"],
+      fontName=FONT_NAME,
+      fontSize=8.0,
+      leading=10.5,
+      textColor=ink_dark,
   )
   sum_label_style = ParagraphStyle(
       "SumLabel",
@@ -778,8 +800,8 @@ def generate_customer_invoice_pdf(
       "BoxBody",
       parent=styles["Normal"],
       fontName=FONT_NAME,
-      fontSize=8.2,
-      leading=11.5,
+      fontSize=8.0,
+      leading=10.5,
       textColor=ink_dark,
   )
 
@@ -797,6 +819,7 @@ def generate_customer_invoice_pdf(
 
   elements = []
   issue_date_str = date.today().strftime("%Y年%m月%d日")
+  period_str = format_period_jp(start_date_obj, end_date_obj)
   transfer_clean = clean_val(bank_transfer_info).replace("\n", "<br/>")
   remark_clean = clean_val(remark_text).replace("\n", "<br/>")
 
@@ -845,34 +868,45 @@ def generate_customer_invoice_pdf(
     elements.append(title_tbl)
     elements.append(Spacer(1, TITLE_SPACER_HEIGHT))
 
-    left_cust_block = Table(
+    left_rows = [
         [
-            [
-                Paragraph(
-                    f"<b>{customer_name}</b> <font size='10'"
-                    " color='#475569'>御中</font>",
-                    cust_style,
-                )
-            ],
-            [Paragraph(f"<b>対象件数：{main_count} 件</b>", meta_badge_style)],
+            Paragraph(
+                f"<b>{customer_name}</b> <font size='10'"
+                " color='#475569'>御中</font>",
+                cust_style,
+            )
         ],
-        colWidths=[8.8 * cm],
+        [Paragraph(f"<b>対象件数：{main_count} 件</b>", meta_badge_style)],
+    ]
+    if period_str:
+      left_rows.append(
+          [Paragraph(f"請求期間：{period_str}", period_note_style)]
+      )
+
+    left_cust_block = Table(
+        left_rows,
+        colWidths=[9.2 * cm],
     )
-    left_cust_block.setStyle(
-        TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LINEBELOW", (0, 0), (0, 0), 1.5, navy_primary),
-            ("BACKGROUND", (0, 1), (0, 1), bg_soft_blue),
-            ("LINEBEFORE", (0, 1), (0, 1), 3.0, navy_accent),
-            ("TOPPADDING", (0, 0), (0, 0), 0),
-            ("BOTTOMPADDING", (0, 0), (0, 0), 4),
-            ("TOPPADDING", (0, 1), (0, 1), 4),
-            ("BOTTOMPADDING", (0, 1), (0, 1), 4),
-            ("LEFTPADDING", (0, 0), (0, 0), 0),
-            ("LEFTPADDING", (0, 1), (0, 1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ])
-    )
+    left_style_cmds = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (0, 0), 1.5, navy_primary),
+        ("BACKGROUND", (0, 1), (0, 1), bg_soft_blue),
+        ("LINEBEFORE", (0, 1), (0, 1), 3.0, navy_accent),
+        ("TOPPADDING", (0, 0), (0, 0), 0),
+        ("BOTTOMPADDING", (0, 0), (0, 0), 4),
+        ("TOPPADDING", (0, 1), (0, 1), 3),
+        ("BOTTOMPADDING", (0, 1), (0, 1), 3),
+        ("LEFTPADDING", (0, 0), (0, 0), 0),
+        ("LEFTPADDING", (0, 1), (0, 1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]
+    if period_str:
+      left_style_cmds.extend([
+          ("TOPPADDING", (0, 2), (0, 2), 4),
+          ("BOTTOMPADDING", (0, 2), (0, 2), 2),
+          ("LEFTPADDING", (0, 2), (0, 2), 0),
+      ])
+    left_cust_block.setStyle(TableStyle(left_style_cmds))
 
     right_issuer_block = Table(
         [
@@ -881,7 +915,7 @@ def generate_customer_invoice_pdf(
             [Paragraph(issuer_addr_html, issuer_addr_style)],
             [Paragraph(issuer_greeting_html, issuer_greeting_style)],
         ],
-        colWidths=[TOTAL_DETAIL_WIDTH - 9.2 * cm],
+        colWidths=[TOTAL_DETAIL_WIDTH - 9.6 * cm],
     )
     right_issuer_block.setStyle(
         TableStyle([
@@ -898,7 +932,7 @@ def generate_customer_invoice_pdf(
 
     top_header_tbl = Table(
         [[left_cust_block, "", right_issuer_block]],
-        colWidths=[8.8 * cm, 0.4 * cm, TOTAL_DETAIL_WIDTH - 9.2 * cm],
+        colWidths=[9.2 * cm, 0.4 * cm, TOTAL_DETAIL_WIDTH - 9.6 * cm],
     )
     top_header_tbl.setStyle(
         TableStyle([
@@ -946,10 +980,11 @@ def generate_customer_invoice_pdf(
     elements.append(summary_box)
     elements.append(Spacer(1, 0.12 * cm))
 
+    # 振込先カード（高さ1.5cm・従来の半分）
     transfer_box = Table(
         [[
             Paragraph(
-                f"<font color='#1E3A8A'><b>■ お振込先口座</b></font><br/>{transfer_clean}",
+                f"<font color='#1E3A8A'><b>■ お振込先口座</b></font> {transfer_clean}",
                 box_body_style,
             )
         ]],
@@ -961,9 +996,9 @@ def generate_customer_invoice_pdf(
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
             ("BOX", (0, 0), (-1, -1), 0.8, border_gray),
             ("LINEBEFORE", (0, 0), (0, -1), 3.0, navy_primary),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ("LEFTPADDING", (0, 0), (-1, -1), 8),
             ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ])
@@ -1005,7 +1040,7 @@ def generate_customer_invoice_pdf(
       row_heights.append(DETAIL_ROW_HEIGHT)
 
     detail_table_data.append([
-        Paragraph("<b>小計（ページ計）</b>", td_center),
+        Paragraph("<b>小計</b>", td_center),
         Paragraph("", td_left),
         Paragraph("", td_right),
         Paragraph("", td_right),
@@ -1068,7 +1103,13 @@ def generate_customer_invoice_pdf(
 # ==========================================
 # 8-2. 全得意先分 請求書PDF 一括ZIP生成関数
 # ==========================================
-def generate_all_invoices_zip(grouped_data, remarks_dict, bank_transfer_info):
+def generate_all_invoices_zip(
+    grouped_data,
+    remarks_dict,
+    bank_transfer_info,
+    start_date_obj=None,
+    end_date_obj=None,
+):
   zip_buffer = io.BytesIO()
   issue_date_str = date.today().strftime("%Y%m%d")
   used_filenames = set()
@@ -1088,6 +1129,8 @@ def generate_all_invoices_zip(grouped_data, remarks_dict, bank_transfer_info):
           detail_rows=rows,
           bank_transfer_info=bank_transfer_info,
           remark_text=remark_str,
+          start_date_obj=start_date_obj,
+          end_date_obj=end_date_obj,
       )
 
       safe_name = sanitize_filename_part(cust_name)
@@ -1132,10 +1175,10 @@ with c3:
 if "input_bank_transfer" not in st.session_state:
   st.session_state["input_bank_transfer"] = DEFAULT_BANK_TRANSFER
 
-st.markdown("### 🏦 振込先（UI入力・PDF枠高さ3cm）")
+st.markdown("### 🏦 振込先（UI入力・PDF枠高さ1.5cm）")
 bank_transfer_input = st.text_area(
     "振込先口座情報を入力してください",
-    height=75,
+    height=60,
     key="input_bank_transfer",
 )
 
@@ -1271,6 +1314,8 @@ if "grouped_invoice_data" in st.session_state:
               grouped_data=grouped,
               remarks_dict=st.session_state["customer_remarks_18"],
               bank_transfer_info=bank_transfer_input,
+              start_date_obj=start_date_input,
+              end_date_obj=end_date_input,
           )
           st.session_state["all_invoices_zip_bytes"] = zip_buf.getvalue()
           st.session_state["all_invoices_zip_filename"] = (
@@ -1333,6 +1378,8 @@ if "grouped_invoice_data" in st.session_state:
               detail_rows=rows,
               bank_transfer_info=bank_transfer_input,
               remark_text=st.session_state["customer_remarks_18"][cust_name],
+              start_date_obj=start_date_input,
+              end_date_obj=end_date_input,
           )
           safe_fname = sanitize_filename_part(cust_name)
           st.download_button(
