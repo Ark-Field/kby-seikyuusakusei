@@ -1156,7 +1156,7 @@ auto_start = date(today_date.year, today_date.month, 1)
 auto_last_day = calendar.monthrange(today_date.year, today_date.month)[1]
 auto_end = date(today_date.year, today_date.month, auto_last_day)
 
-st.markdown("### 🔎 検索条件（売上計上＝計上・売上日期間）")
+st.markdown("### 🔎 検索条件（売上計上/売上日期間）")
 c1, c2, c3 = st.columns([2, 2, 2])
 with c1:
   start_date_input = st.date_input(
@@ -1169,13 +1169,13 @@ with c2:
 with c3:
   st.markdown("<br/>", unsafe_allow_html=True)
   fetch_clicked = st.button(
-      "📥 @pocketからデータ取得・集計", type="primary", key="btn_fetch_pocket"
+      "📥 DBからデータ取得・集計", type="primary", key="btn_fetch_pocket"
   )
 
 if "input_bank_transfer" not in st.session_state:
   st.session_state["input_bank_transfer"] = DEFAULT_BANK_TRANSFER
 
-st.markdown("### 🏦 振込先（UI入力・PDF枠高さ1.5cm）")
+st.markdown("### 🏦 振込先")
 bank_transfer_input = st.text_area(
     "振込先口座情報を入力してください",
     height=60,
@@ -1264,7 +1264,7 @@ if "grouped_invoice_data" in st.session_state:
   grouped = st.session_state["grouped_invoice_data"]
   if not grouped:
     st.warning(
-        "⚠️ 条件（売上計上＝計上・指定期間内）に一致するレコードが見つかりませんでした。"
+        "⚠️ 条件（売上計上/売上日）に一致するレコードが見つかりませんでした。"
     )
   else:
     if "customer_remarks_18" not in st.session_state:
@@ -1365,7 +1365,7 @@ if "grouped_invoice_data" in st.session_state:
           )
         with col_rem:
           st.session_state["customer_remarks_18"][cust_name] = st.text_area(
-              f"備考（高さ3cm枠・{cust_name}）",
+              f"備考（・{cust_name}）",
               value=st.session_state["customer_remarks_18"][cust_name],
               key=f"remark_area_{cust_name}",
               height=75,
